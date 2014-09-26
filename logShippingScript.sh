@@ -1,4 +1,5 @@
 #!/bin/bash
+
 . ./serverConfigurationFIle.cfg
 
 ##Evaluating File Name For the File Names
@@ -35,6 +36,9 @@ cd $DBLOGS_DIR
 
 db_logs_records=$(ls|wc -l)
 
+
+db_records_values=$(ls -l|awk {print $9})
+
 ##Checking If Files Are Present For Processing in DBLOGS Directory
 if [[ db_logs_records -ne 0 ]]; then
 	#statements
@@ -46,7 +50,6 @@ if [[ ! -d "$SHIPPEDLOG_DIR" ]]; then
 	#statements
 	mkdir $SHIPPEDLOG_DIR
 fi
-
 ##Creating gzip of all the files Present in DBLOG Directory
 cd ..
 tar cvzf $file_name.tar.gz Dblogs
@@ -98,7 +101,7 @@ echo "Value of compressed Records is $compressed_records_value"
 for compressed_record in $compressed_records_value
 do
 cd $ARCHIEVE_DIR
-split -b20480 $SHIPPEDLOG_DIR/$compressed_record  $compressed_record.
+split -b27091709 $SHIPPEDLOG_DIR/$compressed_record  $compressed_record.
 last_val=$?
 if [[ $last_val -eq 0 ]]; then
 	#statements
@@ -177,8 +180,8 @@ while [[ $val -le $NUMBER_OF_RETRIAL ]]; do
 	
 	
 echo "Value for Retrial Attempts is $val"
-rsync -rauzvq -e "ssh -o ConnectTimeout=2 -o ServerAliveInterval=5" --bwlimit=0.9  $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
-
+#rsync -rauzvq -e "ssh -o ConnectTimeout=2 -o ServerAliveInterval=5" --bwlimit=200  --progress $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
+rsync -a -i  -e  "ssh -o ServerAliveInterval=10" --bwlimit=2500  --progress --timeout=5   $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
 Last_Rec=$?
 echo "Value for exit status is $Last_Rec"
 if [[ $Last_Rec -eq 0 ]]; then
@@ -218,7 +221,7 @@ function Transfer(){
 #rsync -a -i  -e ssh --bwlimit=20 --log-file=./Result2	  --timeout=5  /home/ubuntu/temp/Work/Middle/$1  $vikas2@$192.168.0.213:~/temp/Work/Middle
 
 ####### Checking If File Has Already been Transferred#############
-echo "Inside Transfer"
+echo "Inside Transfer for File $1"
 echo $1|grep Sent
 pipe_v=${PIPESTATUS[1]}
 
@@ -241,34 +244,137 @@ if [[ $pipe_v -eq 0 ]]; then
 else
 
 ##Transferring File To Remote Server
-#rsync -a -i  -e ssh --bwlimit=1   --progress --timeout=2  $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
-rsync -rauzvq -e "ssh -o ConnectTimeout=2 -o ServerAliveInterval=5" --bwlimit=0.9 $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
+
+#rsync -rauzvq -e ssh  --bwlimit=80  --progress  $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
+#rsync -a -i  -e  "ssh -o ConnectTimeout=2" --bwlimit=300   --progress   $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
+#rsync -a -i  -e ssh --bwlimit=300   --progress --timeout=5  $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
+insert_val=0
+echo "Exit"|sqlcmd -S 192.168.0.66 -U archit -P password
+#conn_value=$(sqlcmd -S 192.168.0.66 -U archit -P password)
+conn_value=$?
+echo "Connection Value is $conn_value"
+if [[ $conn_value -ne 0 ]]; then
+	#statements
+	insert_val=1
+fi
+check_val=0 
+present_in_db=0   
+echo "Select TOP 1 fileName from DW.dbo.log_ship_archieve where fileName='$1' "|sqlcmd -S 192.168.0.66 -U archit -P password|grep -w $1
+check_val=${PIPESTATUS[2]}
+
+echo "Value Of Existence of file is $check_val"
+if [[ $check_val -eq 0 ]]; then
+	#statements
+	present_in_db=1
+fi
+
+
+    fileName=$1
+	echo "File Name is $fileName"
+	parentName=$(echo $1|awk -F '.' '{OFS=FS}{print $1,$2,$3}')
+	echo "Parent Name is $parentName"
+	MD5=$(md5sum $1)
+	echo "MD5 is $MD5"
+	Shipped=0
+	Integrity=1
+
+if [[ $insert_val -eq 0 && $present_in_db -eq 0 ]]; then
+	#statements
+
+echo "insert into DW.dbo.log_ship_archieve(fileName,parentName,MD5,Shipped,Integrity) values('$fileName','$parentName','$MD5','$Shipped','$Integrity')
+go"|sqlcmd -S 192.168.0.66 -U archit -P password	
+present_in_db=1
+fi
+
+
+
+rsync -a -i  -e  "ssh -o ServerAliveInterval=10" --bwlimit=2500   --progress --timeout=5   $HOME_FOLDER/$1 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
 Last_Rec=$?
 if [[ $Last_Rec -eq 0 ]]; then
+	##Db Insertion Logic
+
+	Shipped=1
+	echo "Shipped Value is $Shipped"
+	Integrity=1
+	echo "Integrity Value is $Integrity	"
+	Stat="Done"
+	
+if [[ $insert_val -eq 0 ]]; then
 	#statements
-	file_name_sent="$1_Sent"
+echo "update DW.dbo.log_ship_archieve set Shipped=1,Integrity=1,Status='Done' where fileName='$fileName'  
+	go"|sqlcmd -S 192.168.0.66 -U archit -P password
+echo "Query Executed Perfectly"
+else
+echo "insert into  DW.dbo.log_ship_archieve values('$fileName','$parentName','$MD5','$Shipped','$Integrity','Done')  
+	go"|sqlcmd -S 192.168.0.66 -U archit -P password
+
+fi
+	
+
+    file_name_sent="$1_Sent"
 	mv "$1" "$1_Sent"
 	echo  "Value for Y is " $file_name_sent
 	#mv "$1" "$1"
 	echo "Transfer Is SuccessFul..Exiting This Loop"
 	mv $file_name_sent $LOG_SUCCESS_DIR
-
+ 
 else 
  echo "Attempting retrial Logic"
    ReTrial $1
-   last_command_value=$?
+	   last_command_value=$?
    echo "Value in Last Variab is $last_command_value"
    if [[ $last_command_value == 0 ]]; then
     #statements
-   	mv $1 $LOG_SUCCESS_DIR
    
+echo "Exit"|sqlcmd -S 192.168.0.66 -U archit -P password
+#conn_value=$(sqlcmd -S 192.168.0.66 -U archit -P password)
+conn_value_third=$?
+echo "Connection Value is $conn_value"
+if [[ conn_value_third -eq 0 ]]; then
+	#statements
+
+if [[ $insert_val -eq 0 && $present_in_db -ne 0 ]]; then
+	#statements
+echo "update DW.dbo.log_ship_archieve set Shipped=1,Integrity=1,Status='Done' where fileName='$fileName'  
+	go"|sqlcmd -S 192.168.0.66 -U archit -P password
+echo "Query Executed Perfectly"
+else
+	newShipped=1
+echo "insert into  DW.dbo.log_ship_archieve values('$fileName','$parentName','$MD5','$newShipped','$Integrity','Done')  
+	go"|sqlcmd -S 192.168.0.66 -U archit -P password
+
+fi
+
+
+
+
+ 	mv $1 $LOG_SUCCESS_DIR
+fi
    else
+  
+
+    Shipped=0
+    Integrity=0
+    Stat="Failed"
+
+
+echo "Exit"|sqlcmd -S 192.168.0.66 -U archit -P password
+#conn_value=$(sqlcmd -S 192.168.0.66 -U archit -P password)
+conn_value_second=$?
+echo "Connection Value is $conn_value"
+if [[ $conn_value_second -eq 0 ]]; then
+	#statements
+	
+  echo "update DW.dbo.log_ship_archieve set Shipped=0,Integrity=1,Status='$Stat' where fileName='$fileName'
+go"|sqlcmd -S 192.168.0.66 -U archit -P password
+fi
     mv $1 $LOG_FAILED_DIR
    
    fi 
 fi
 
 fi
+
 
 }
 #######################################For Transferring Lists Of Split Parts###########################################################
@@ -370,20 +476,150 @@ cat failedTemplate|sed "s/<SUBJECT>/Failed Files/g;s/<FILES_FAILED>/$l1/g;s/<DAT
 sendmail vikas.kundra25@gmail.com  < emailFailedFile
 
 fi
+}
+
+#####################################################Function Which is used To Update DB In Case Of Connection Is Lost To DB################
+function UpdateDB(){
+
+##Checking For Files in LogSuccess
+cd $LOG_SUCCESS_DIR
+file_values=$(ls -l|awk '{print $9}')
+
+for file in $file_values
+
+do 
+file_orig=$(echo $file|sed 's/_Sent//')
+echo "Select  fileName From DW.dbo.log_ship_archieve where fileName='$file_orig' and Shipped='0' 
+ go "|sqlcmd -S 192.168.0.66 -U archit -P password|grep 1
+ check_Var=${PIPESTATUS[2]}
+ echo "Value of Check varibale is $check_Var"
+
+ if [[ $check_Var -eq 0 ]]; then
+ 	#statements
+
+# 	echo "File --->$file is Not  Present"
+echo "Default Record Is Present "
+echo "update DW.dbo.log_ship_archieve set Shipped=1,Integrity=1,Status='Done' where fileName='$file_orig'  
+	go"|sqlcmd -S 192.168.0.66 -U archit -P password
+
+fi
+done
+
+###Checking in Log Failed For Existence Of Record in DataBase
+
+cd $LOG_FAILED_DIR
+file_values=$(ls -l|awk '{print $9}')
+for file in $file_values
+
+do 
+
+echo "Select  fileName From DW.dbo.log_ship_archieve where fileName='$file' 
+ go "|sqlcmd -S 192.168.0.66 -U archit -P password|grep 1
+ check_Var=${PIPESTATUS[2]}
+ echo "Value of Check varibale is $check_Var"
+
+ if [[ $check_Var -eq 1 ]]; then
+
+parentName=$(echo $file|awk -F '.' '{OFS=FS}{print $1,$2,$3}')
+	echo "Parent Name is $parentName"
+	MD5=$(md5sum $file)
+	echo "MD5 is $MD5"
+	Shipped=0
+	Integrity=1
+
+ echo "insert into  DW.dbo.log_ship_archieve values('$file','$parentName','$MD5','$Shipped','$Integrity','Failed')
+go"|sqlcmd -S 192.168.0.66 -U archit -P password
+
+
+fi
+done
+
+
+
+##Updating Status Column For Files Not Transferred 
+echo "Update DW.dbo.log_ship_archieve set Status='Failed' where Shipped='0' and Status='INPROGRESS' 
+ go "|sqlcmd -S 192.168.0.66 -U archit -P password
+
+
+}
+
+######################################Function To Generate MD5 of all Transferred Files#######################################
+function GenerateMD5()
+{
+	cd $WORK_DIR
+	str="_MD5"
+	y=$file_name$str
+	if [[ -f $y ]]; then
+		#statements
+	rm $y
+	fi
+	
+	echo "Value of FileName Being Created is $y"
+	touch $y
+	cd $LOG_SUCCESS_DIR
+	file_values=$(ls -l|awk '{print $9}'|grep -v lists)
+
+for file in $file_values
+
+do 
+echo "Value of filename is $file"
+
+md5sum $file>>$WORK_DIR/$y
+done
+
+	
+cd $WORK_DIR
+rsync -a -i  -e  "ssh -o ServerAliveInterval=10" --bwlimit=2500   --progress --timeout=5   $WORK_DIR/$y	 $DEST_NAME@$DEST_IP:$DESTINATION_FOLDER
+Last_Rec=$?
+ 
+}
+
+
+######################################Function To Resend Those Files Which Failed Integrity Test##################################
+function IntegrityCheck(){
+
+
+integ_value=$(echo "Select  fileName From DW.dbo.log_ship_archieve where Integrity='0' and Shipped='1'
+ go "|sqlcmd -S 192.168.0.66 -U archit -P password)
+
+
+integ_value=$(echo "$integ_value"|grep -v row|grep -v fileName|grep -v -)
+echo "File Values being Retrieved are: $integ_value"
+sent="_Sent"
+
+for file in $integ_value
+do
+	temp_name=$file$sent
+new_name=$(echo $temp_name|sed 's/_Sent//')
+echo "Now Value is $new_name"
+#mv $temp_name $new_name
+mv $LOG_SUCCESS_DIR/$temp_name $ARCHIEVE_DIR/$new_name
+
+
+cd $LOG_SUCCESS_DIR	
+done
+
 
 
 }
 
 
-
 #Order Of Function Calls
+
 Compress
-	Split
+Split
+
 LogFailedCheck
+IntegrityCheck
+
 TransferLists
-TransFerMD
-#TransferArchieves
+TransferArchieves
+
+UpdateDB
+GenerateMD5
+
 #SendEmail
 
+
 	
-	
+		

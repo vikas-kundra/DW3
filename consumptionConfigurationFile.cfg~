@@ -1,0 +1,21 @@
+Lists="lists"
+MD5="MD5"
+APP="APP"
+Consumption_Working_Directory="/home/ubuntu/temp"
+Dblogs="Dblogs"
+Tar=".tar.gz"
+Store="_store"
+Raw_Req="raw_requests"
+Table_Creation="Create Table DW.dbo.$temp_table  (time               DATETIME,
+  ad_id              INT,
+  width              INT,
+  height             INT,
+  profile_key        VARCHAR(64),
+  partner_channel_id INT,
+  response_code      INT);"
+  Connection_String="sqlcmd -S 192.168.0.66 -U archit -P password"
+  Format_File_Directory="/home/ubuntu/Downloads/SQLConnect"
+  Password="password"
+  User_Name="archit"
+  Server_Ip_Address="192.168.0.66"
+  Raw_Impressions="raw_impressions"
